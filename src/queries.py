@@ -9,7 +9,6 @@ so every query's logic is checked in CI without BigQuery credentials.
 from pathlib import Path
 
 import pandas as pd
-import sqlglot
 
 SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
 PUBLIC_DATASET = "bigquery-public-data.thelook_ecommerce"
@@ -32,6 +31,8 @@ def render(name: str, dataset: str, analysis_end: str) -> str:
 
 
 def to_duckdb(bigquery_sql: str) -> str:
+    import sqlglot  # only needed for the DuckDB test path
+
     return sqlglot.transpile(bigquery_sql, read="bigquery", write="duckdb")[0]
 
 

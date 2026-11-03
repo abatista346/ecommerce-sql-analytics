@@ -2,6 +2,10 @@
 -- split by traffic source, plus an overall row via ROLLUP.
 -- Each stage counts sessions that reached that stage AND every stage before it,
 -- so the funnel is strictly non-increasing.
+-- The grouping column is named `source` (not `traffic_source`) on purpose: BigQuery
+-- resolves GROUP BY names to SELECT aliases first, so reusing the alias would make
+-- ROLLUP group by the output expression and lose the "All sources" total row.
+-- GROUPING() then labels the total row explicitly instead of relying on NULL.
 WITH sessions AS (
     SELECT
         session_id,
@@ -16,14 +20,14 @@ WITH sessions AS (
 ),
 staged AS (
     SELECT
-        traffic_source,
+        traffic_source                                   AS source,
         viewed_product                                   AS reached_product,
         viewed_product * added_to_cart                   AS reached_cart,
         viewed_product * added_to_cart * purchased       AS reached_purchase
     FROM sessions
 )
 SELECT
-    COALESCE(traffic_source, 'All sources')                       AS traffic_source,
+    IF(GROUPING(source) = 1, 'All sources', source)               AS traffic_source,
     COUNT(*)                                                      AS sessions,
     SUM(reached_product)                                          AS product_view_sessions,
     SUM(reached_cart)                                             AS cart_sessions,
@@ -32,5 +36,5 @@ SELECT
     SAFE_DIVIDE(SUM(reached_purchase), SUM(reached_cart))         AS cart_to_purchase_rate,
     SAFE_DIVIDE(SUM(reached_purchase), COUNT(*))                  AS session_conversion_rate
 FROM staged
-GROUP BY ROLLUP (traffic_source)
+GROUP BY ROLLUP (source)
 ORDER BY sessions DESC
