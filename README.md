@@ -77,6 +77,8 @@ outputs/
 2. Authenticate with Google Cloud: `gcloud auth application-default login`. Any Google Cloud project works, including a free [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox); the queries scan well under the 1 TB monthly free tier.
 3. `python src/run_analysis.py --project YOUR_GCP_PROJECT` (optionally `--analysis-end 2026-11-01`, the exclusive cut-off date)
 
+Or run everything in the browser: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/abatista346/ecommerce-sql-analytics/blob/main/notebooks/run_on_bigquery.ipynb) — set your project ID in the first cell.
+
 Run the tests with `pytest` — they need neither BigQuery nor credentials.
 
 ## Limitations and Next Steps
