@@ -16,7 +16,7 @@ A head of e-commerce asks five things:
 
 ## Data Source
 
-[theLook eCommerce](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce), a public BigQuery dataset (`bigquery-public-data.thelook_ecommerce`) published by Google with users, orders, order items, products and web events for a fictional clothing store. The data is synthetic and regenerated continuously — including some rows dated in the future — so every query uses a fixed cut-off date for reproducible results.
+[theLook eCommerce](https://console.cloud.google.com/marketplace/product/bigquery-public-data/thelook-ecommerce), a public BigQuery dataset (`bigquery-public-data.thelook_ecommerce`) published by Google with users, orders, order items, products and web events for a fictional clothing store. The data is synthetic and regenerated continuously, so every query uses a fixed cut-off date for reproducible results, and the data-quality query checks for rows dated after it.
 
 ## SQL Techniques
 
@@ -49,9 +49,51 @@ SQL (BigQuery, DuckDB), Python, pandas, SciPy, statsmodels, matplotlib, sqlglot,
 
 <!-- RESULTS:START -->
 
-## Results
+## Results (data through October 2026)
 
-Run the pipeline in [Setup](#setup) to generate this section.
+### Data quality
+
+- 124,452 orders in the dataset, none dated after the cut-off.
+- 0 orders without items, 0 duplicate item ids, 0 orders without a user.
+- 15.0% of items are cancelled and 10.0% returned; both are excluded from revenue.
+
+### Growth
+
+Net revenue over the last 12 months was **US$3,259,634**, +89% versus the prior 12 months. That headline is inflated by the final months: the last month alone is 3.3× the median month before it. theLook is synthetic and its most recent months are much denser than the rest, so this jump is most likely an artifact of how the data is generated rather than a business trend. Excluding the last 3 months, revenue grew **+58%** year over year, the better estimate of the underlying trend.
+
+![Monthly revenue](outputs/figures/01_monthly_revenue.png)
+
+### Retention
+
+Across the last 12 acquisition cohorts, a median of **4.9%** of new customers buy again in their second month (range 3.1%–13.7%). Retention is the weakest part of the business: most revenue depends on acquiring new buyers. The newest cohorts show much higher rates; this coincides with the same end-of-series jump in orders, so it should not be read as improving loyalty without more months of data.
+
+![Cohort retention](outputs/figures/02_cohort_retention.png)
+
+### Conversion by traffic source
+
+Session conversion ranges from **52.02% (Facebook)** to **53.33% (Email)**. The differences are **not** statistically significant (χ² = 8.0, df = 4, p = 0.09), so channel budget should not be reallocated on conversion alone.
+
+![Conversion by source](outputs/figures/03_conversion_by_source.png)
+
+### Who drives revenue
+
+- The top 10% of customers generate **34.5%** of revenue, and the top 20% generate **53.0%**.
+- **Champions** (recent, repeat buyers) are 13.5% of customers but 24.4% of revenue; **At risk** customers (repeat buyers who have gone quiet) hold 7.6% of revenue.
+
+![RFM segments](outputs/figures/04_rfm_segments.png)
+![Revenue concentration](outputs/figures/05_revenue_concentration.png)
+
+### Categories
+
+Highest margin rate: **Blazers & Jackets** (62.2%). Highest return rate: **Jumpsuits & Rompers** (14.6%).
+
+![Category margin vs returns](outputs/figures/06_category_margin_vs_returns.png)
+
+### Recommendations
+
+1. **Retention before acquisition.** With a median second-month repeat rate of 4.9%, a post-purchase program aimed at first-time buyers has more room to grow revenue than further acquisition spend. Test it with a randomized holdout before scaling.
+2. **Win back the *At risk* segment** first: these customers have already bought more than once, so reactivating them is cheaper than converting new ones.
+3. **Do not reallocate channel budget on conversion rate alone**: the differences between sources are within sampling noise.
 
 <!-- RESULTS:END -->
 
@@ -78,6 +120,8 @@ outputs/
 3. `python src/run_analysis.py --project YOUR_GCP_PROJECT` (optionally `--analysis-end 2026-11-01`, the exclusive cut-off date)
 
 Or run everything in the browser: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/abatista346/ecommerce-sql-analytics/blob/main/notebooks/run_on_bigquery.ipynb) — set your project ID in the first cell.
+
+To rebuild the charts and this README from the CSVs already in `outputs/` without querying BigQuery again: `python src/run_analysis.py --from-outputs`.
 
 Run the tests with `pytest` — they need neither BigQuery nor credentials.
 

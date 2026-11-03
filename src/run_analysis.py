@@ -69,6 +69,24 @@ def funnel_tests(funnel: pd.DataFrame) -> dict:
     }
 
 
+def recent_acceleration(kpis: pd.DataFrame, recent: int = 3) -> dict:
+    """Compare the final months with the rest of the window.
+
+    theLook's generator fills recent months much more densely, which shows up as
+    a sudden jump at the end of the series. This separates that jump from the
+    year-over-year growth of the stable part of the window.
+    """
+    revenue = kpis["revenue"].astype(float).reset_index(drop=True)
+    stable = revenue.iloc[:-recent]
+    baseline = float(stable.tail(12).median())
+    last_ratio = float(revenue.iloc[-1] / baseline) if baseline else float("nan")
+    yoy_stable = float("nan")
+    if len(stable) >= 24 - recent and len(stable) > 12:
+        n = len(stable) - 12
+        yoy_stable = float(stable.iloc[12:].sum() / stable.iloc[:n].sum() - 1)
+    return {"last_month_vs_median": last_ratio, "is_spike": last_ratio > 1.5, "yoy_excluding_recent": yoy_stable, "recent_months": recent}
+
+
 # ---------- charts ----------
 
 def plot_monthly(kpis: pd.DataFrame) -> None:
@@ -157,7 +175,7 @@ def plot_categories(cats: pd.DataFrame) -> None:
         ax.scatter(g["return_rate"] * 100, g["margin_rate"] * 100, s=g["net_revenue"] / cats["net_revenue"].max() * 600,
                    alpha=0.7, color=colors[dept], label=dept)
     for _, r in cats.nlargest(6, "net_revenue").iterrows():
-        ax.annotate(r["category"], (r["return_rate"] * 100, r["margin_rate"] * 100), fontsize=8, xytext=(5, 4), textcoords="offset points")
+        ax.annotate(f"{r['category']} ({r['department'][0]})", (r["return_rate"] * 100, r["margin_rate"] * 100), fontsize=8, xytext=(5, 4), textcoords="offset points")
     ax.set_xlabel("Return rate (%)")
     ax.set_ylabel("Gross margin rate (%)")
     ax.set_title("Categories: margin vs. returns (bubble size = net revenue)", loc="left", fontsize=12, fontweight="bold")
@@ -187,22 +205,35 @@ def write_readme(r: dict) -> None:
     worst_ret = cats.sort_values("return_rate", ascending=False).iloc[0]
     best_margin = cats.sort_values("margin_rate", ascending=False).iloc[0]
     sig = ft["p_value"] < 0.05
+    accel = recent_acceleration(kpis)
+    future = int(dq["n_orders_after_cutoff"])
+    recent_cohorts = mat[1].dropna().tail(3)
+    newest_higher = len(m1) > 3 and recent_cohorts.max() > 1.5 * m1.iloc[:-3].median()
 
     lines = [
         START, "",
         f"## Results (data through {r['analysis_end_label']})", "",
         "### Data quality", "",
-        f"- {int(dq['n_orders']):,} orders in the dataset; **{int(dq['n_orders_after_cutoff']):,} are dated after the cut-off** (theLook generates future-dated rows) and are excluded everywhere.",
+        (f"- {int(dq['n_orders']):,} orders in the dataset; **{future:,} are dated after the cut-off** and are excluded everywhere."
+         if future else
+         f"- {int(dq['n_orders']):,} orders in the dataset, none dated after the cut-off."),
         f"- {int(dq['n_orders_without_items'])} orders without items, {int(dq['n_duplicate_item_ids'])} duplicate item ids, {int(dq['n_orders_without_user'])} orders without a user.",
         f"- {pct(dq['share_items_cancelled'])} of items are cancelled and {pct(dq['share_items_returned'])} returned; both are excluded from revenue.", "",
         "### Growth", "",
         f"Net revenue over the last 12 months was **US${last12:,.0f}**"
-        + (f", {last12 / prev12 - 1:+.0%} versus the prior 12 months." if prev12 == prev12 and prev12 > 0 else "."),
+        + (f", {last12 / prev12 - 1:+.0%} versus the prior 12 months." if prev12 == prev12 and prev12 > 0 else ".")
+        + ((f" That headline is inflated by the final months: the last month alone is {accel['last_month_vs_median']:.1f}× the median month before it. "
+            "theLook is synthetic and its most recent months are much denser than the rest, so this jump is most likely an artifact of how the data is generated rather than a business trend. "
+            + (f"Excluding the last {accel['recent_months']} months, revenue grew **{accel['yoy_excluding_recent']:+.0%}** year over year, the better estimate of the underlying trend."
+               if accel["yoy_excluding_recent"] == accel["yoy_excluding_recent"] else ""))
+           if accel["is_spike"] else ""),
         "", "![Monthly revenue](outputs/figures/01_monthly_revenue.png)", "",
         "### Retention", "",
         f"Across the last 12 acquisition cohorts, a median of **{pct(m1.median())}** of new customers buy again in their second month "
         f"(range {pct(m1.min())}–{pct(m1.max())})."
-        + (" Retention is the weakest part of the business: most revenue depends on acquiring new buyers." if m1.median() < 0.10 else ""),
+        + (" Retention is the weakest part of the business: most revenue depends on acquiring new buyers." if m1.median() < 0.10 else "")
+        + (" The newest cohorts show much higher rates; this coincides with the same end-of-series jump in orders, so it should not be read as improving loyalty without more months of data."
+           if newest_higher and accel["is_spike"] else ""),
         "", "![Cohort retention](outputs/figures/02_cohort_retention.png)", "",
         "### Conversion by traffic source", "",
         f"Session conversion ranges from **{pct(ft['worst_rate'], 2)} ({ft['worst_source']})** to **{pct(ft['best_rate'], 2)} ({ft['best_source']})**. "
@@ -239,22 +270,29 @@ def write_readme(r: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", required=True, help="GCP project to run (and bill) the queries")
+    parser.add_argument("--project", help="GCP project to run (and bill) the queries")
+    parser.add_argument("--from-outputs", action="store_true",
+                        help="Rebuild charts and README from the CSVs already in outputs/ instead of querying BigQuery")
     parser.add_argument("--analysis-end", default=DEFAULT_ANALYSIS_END, help="Exclusive cut-off date, first day of a month (YYYY-MM-01)")
     args = parser.parse_args()
+    if not args.from_outputs and not args.project:
+        parser.error("--project is required unless --from-outputs is used")
 
-    from google.cloud import bigquery
-
-    client = bigquery.Client(project=args.project)
     OUT.mkdir(exist_ok=True)
     FIG.mkdir(parents=True, exist_ok=True)
 
     results = {}
-    for q in QUERIES:
-        df = run_bigquery(q, args.analysis_end, client=client)
-        df.to_csv(OUT / f"{q}.csv", index=False)
-        results[q] = df
-        print(f"{q}: {len(df)} rows")
+    if args.from_outputs:
+        results = {q: pd.read_csv(OUT / f"{q}.csv") for q in QUERIES}
+    else:
+        from google.cloud import bigquery
+
+        client = bigquery.Client(project=args.project)
+        for q in QUERIES:
+            df = run_bigquery(q, args.analysis_end, client=client)
+            df.to_csv(OUT / f"{q}.csv", index=False)
+            results[q] = df
+            print(f"{q}: {len(df)} rows")
 
     dq = results["00_data_quality"].iloc[0]
     kpis, cohorts, funnel = results["01_monthly_kpis"], results["02_cohort_retention"], results["03_funnel_by_source"]

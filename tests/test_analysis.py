@@ -62,3 +62,16 @@ def test_end_to_end_report_on_synthetic_data(tmp_path, monkeypatch):
     assert text.startswith("intro") and text.rstrip().endswith("outro")
     assert "placeholder" not in text and "## Results (data through October 2026)" in text
     assert (tmp_path / "02_cohort_retention.png").exists()
+
+
+def test_recent_acceleration_flags_end_of_series_jump():
+    revenue = [100.0 + i for i in range(21)] + [300.0, 350.0, 600.0]
+    r = run_analysis.recent_acceleration(pd.DataFrame({"revenue": revenue}))
+    assert r["is_spike"] and r["last_month_vs_median"] > 5
+    stable = revenue[:21]
+    assert r["yoy_excluding_recent"] == pytest.approx(sum(stable[12:]) / sum(stable[:9]) - 1)
+
+
+def test_recent_acceleration_quiet_on_steady_series():
+    r = run_analysis.recent_acceleration(pd.DataFrame({"revenue": [100.0 + i for i in range(24)]}))
+    assert not r["is_spike"]

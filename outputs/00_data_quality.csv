@@ -1,0 +1,2 @@
+n_orders,n_orders_after_cutoff,first_order_at,n_orders_without_items,n_duplicate_item_ids,n_nonpositive_prices,n_orders_without_user,share_items_cancelled,share_items_returned
+124452,0,2019-01-14 06:24:26+00:00,0,0,0,0,0.14980691135626792,0.09980303851814148

@@ -1,0 +1,10 @@
+{
+  "chi2": 7.979769245316803,
+  "dof": 4,
+  "p_value": 0.09232209027294003,
+  "best_source": "Email",
+  "best_rate": 0.5333061157834572,
+  "worst_source": "Facebook",
+  "worst_rate": 0.5201863354037267,
+  "best_vs_worst_p": 0.005657387958568919
+}
